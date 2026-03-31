@@ -1,12 +1,13 @@
 'use client'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { signIn } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function LoginPage() {
+// 1. We move the actual form into a separate inner component
+function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams?.get('callbackUrl') || '/' // Where to send them after login
+  const callbackUrl = searchParams?.get('callbackUrl') || '/'
 
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
@@ -17,7 +18,6 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
-    // Use NextAuth to sign in
     const res = await signIn('credentials', {
       redirect: false,
       email: form.email,
@@ -28,9 +28,8 @@ export default function LoginPage() {
       setError(res.error)
       setLoading(false)
     } else {
-      // Success! Let NextAuth and our Middleware handle the routing!
       router.push(callbackUrl)
-      router.refresh() // Update UI state
+      router.refresh() 
     }
   }
 
@@ -67,5 +66,14 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+// 2. We wrap the outer page in Suspense to make Vercel happy!
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-stone-950 flex items-center justify-center text-amber-400">Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   )
 }
