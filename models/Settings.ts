@@ -9,14 +9,15 @@ export interface ISettingsDocument extends Document {
   bankSortCode?: string
   // Paystack
   paystackPublicKey: string
-  
+
   // 🚚 ADVANCED DELIVERY SETTINGS
   deliveryMode: 'flat' | 'zoned' | 'auto'
-  deliveryFee: number // Used for 'flat' mode
-  deliveryZones: { name: string; fee: number }[] // Used for 'zoned' mode
-  shippingApiKey: string // Used for 'auto' mode (Aggregator)
+  deliveryFee: number 
+  deliveryZones: { name: string; fee: number }[] 
+  kwikEmail: string // 👈 NEW: Kwik Auth
+  kwikPassword: string // 👈 NEW: Kwik Auth
   freeDeliveryAbove: number
-  
+
   // Restaurant info
   restaurantName: string
   restaurantPhone: string
@@ -41,7 +42,7 @@ const SettingsSchema = new Schema<ISettingsDocument>(
     bankSortCode: { type: String, default: '' },
     // Paystack
     paystackPublicKey: { type: String, default: '' },
-    
+
     // 🚚 Delivery
     deliveryMode: { type: String, enum: ['flat', 'zoned', 'auto'], default: 'flat' },
     deliveryFee: { type: Number, default: 1500 },
@@ -53,13 +54,14 @@ const SettingsSchema = new Schema<ISettingsDocument>(
         { name: 'Ikorodu', fee: 2500 }
       ]
     },
-    shippingApiKey: { type: String, default: '' },
+    kwikEmail: { type: String, default: '' }, // 👈 NEW
+    kwikPassword: { type: String, default: '' }, // 👈 NEW
     freeDeliveryAbove: { type: Number, default: 10000 },
-    
+
     // Restaurant info
     restaurantName: { type: String, default: 'TableOS Restaurant' },
     restaurantPhone: { type: String, default: '' },
-    restaurantAddress: { type: String, default: '' },
+    restaurantAddress: { type: String, default: 'Lagos, Nigeria' }, // Highly recommend setting a real default address here later!
     openingTime: { type: String, default: '10:00' },
     closingTime: { type: String, default: '22:00' },
     // Flags
