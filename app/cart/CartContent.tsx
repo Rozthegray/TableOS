@@ -15,7 +15,7 @@ function formatNaira(amount: number) {
   return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount)
 }
 
-export default function CartPage() {
+export default function CartContent() {
   const { items, removeItem, updateQuantity, total, clearCart } = useCartStore()
   const router = useRouter()
 
@@ -24,6 +24,10 @@ export default function CartPage() {
   const [step, setStep] = useState<'cart' | 'checkout' | 'success'>('cart')
   const [submitting, setSubmitting] = useState(false)
   const [orderNumber, setOrderNumber] = useState('')
+
+  // 🚚 Kwik Delivery States
+  const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number | null>(null)
+  const [calculatingFee, setCalculatingFee] = useState(false)
 
   const [form, setForm] = useState({
     name: '', phone: '', email: '', address: '', notes: '',
@@ -40,16 +44,54 @@ export default function CartPage() {
       .catch((err) => console.error("Failed to load settings", err))
   }, [])
 
-  const handleField = (field: string, value: string) => setForm((f) => ({ ...f, [field]: value }))
+  const handleField = (field: string, value: string) => {
+    setForm((f) => ({ ...f, [field]: value }))
+    // If they change their address, reset the delivery fee so they have to recalculate
+    if (field === 'address') setDynamicDeliveryFee(null) 
+  }
+
+  // 🏍️ Fetch Kwik Delivery Quote
+  const calculateDeliveryFee = async () => {
+    if (!form.address) return alert('Please enter an address first')
+    setCalculatingFee(true)
+    
+    try {
+      const res = await fetch('/api/delivery/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerAddress: form.address })
+      })
+      const data = await res.json()
+      
+      if (data.success) {
+        setDynamicDeliveryFee(data.deliveryFee)
+      } else {
+        alert(data.error || 'Could not calculate delivery fee. Please try a more specific address (e.g., "12 Admiralty Way, Lekki").')
+      }
+    } catch {
+      alert('Network error calculating delivery fee.')
+    } finally {
+      setCalculatingFee(false)
+    }
+  }
 
   // 💰 Dynamic Pricing Math
   const cartTotal = total()
   let deliveryFee = 0
+  
   if (orderType === 'delivery' && settings) {
-    if (settings.freeDeliveryAbove === 0 || cartTotal < settings.freeDeliveryAbove) {
+    if (settings.deliveryMode === 'auto') {
+      deliveryFee = dynamicDeliveryFee || 0
+    } else {
       deliveryFee = settings.deliveryFee || 0
     }
+
+    // Apply free delivery logic if applicable
+    if (settings.freeDeliveryAbove > 0 && cartTotal >= settings.freeDeliveryAbove) {
+      deliveryFee = 0
+    }
   }
+  
   const grandTotal = cartTotal + deliveryFee
 
   // 💳 Paystack Configuration
@@ -80,7 +122,7 @@ export default function CartPage() {
           address: form.address || undefined,
         },
         paymentMethod: form.paymentMethod,
-        paymentReference, // Save Paystack ref if applicable
+        paymentReference, 
         notes: form.notes || undefined,
       }
 
@@ -111,6 +153,11 @@ export default function CartPage() {
     if (orderType === 'delivery' && !form.address) return alert('Please enter delivery address')
     if (!items.length) return alert('Your cart is empty')
     
+    // 🛡️ Block checkout if Kwik auto-delivery is on but they haven't calculated the fee
+    if (orderType === 'delivery' && settings?.deliveryMode === 'auto' && dynamicDeliveryFee === null) {
+      return alert('Please calculate the delivery fee for your address first.')
+    }
+    
     // Safety check: ensure Paystack key exists before trying to open it
     if (form.paymentMethod === 'paystack' && !settings?.paystackPublicKey) {
       return alert('Online payments are currently unavailable. Please choose Cash or Bank Transfer.')
@@ -122,11 +169,11 @@ export default function CartPage() {
     if (form.paymentMethod === 'paystack') {
       initializePayment({
         onSuccess: (reference: any) => {
-          placeOrderInDB(reference.reference) // Payment succeeded, save to DB!
+          placeOrderInDB(reference.reference) 
         },
         onClose: () => {
           alert('Payment cancelled.')
-          setSubmitting(false) // Let them try again
+          setSubmitting(false) 
         }
       })
     } else {
@@ -256,10 +303,25 @@ export default function CartPage() {
                 className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" />
               <input type="email" placeholder="Email (optional)" value={form.email} onChange={(e) => handleField('email', e.target.value)}
                 className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" />
+              
+              {/* 🚚 Dynamic Address Box for Delivery */}
               {orderType === 'delivery' && (
-                <input type="text" placeholder="Delivery Address *" value={form.address} onChange={(e) => handleField('address', e.target.value)}
-                  className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" />
+                <div className="space-y-2">
+                  <input type="text" placeholder="Delivery Address *" value={form.address} onChange={(e) => handleField('address', e.target.value)}
+                    className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" />
+                  
+                  {settings?.deliveryMode === 'auto' && (
+                    <button 
+                      onClick={calculateDeliveryFee} 
+                      disabled={calculatingFee || !form.address}
+                      className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-amber-400 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                    >
+                      {calculatingFee ? 'Calculating via Kwik...' : dynamicDeliveryFee !== null ? 'Recalculate Delivery Fee' : 'Calculate Delivery Fee'}
+                    </button>
+                  )}
+                </div>
               )}
+              
               <textarea placeholder="Special instructions (optional)" value={form.notes} onChange={(e) => handleField('notes', e.target.value)} rows={2}
                 className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500 resize-none" />
             </div>
@@ -307,7 +369,11 @@ export default function CartPage() {
               {orderType === 'delivery' && (
                 <div className="flex justify-between text-stone-400 mt-2">
                   <span>Delivery Fee</span>
-                  <span>{deliveryFee === 0 ? 'Free' : formatNaira(deliveryFee)}</span>
+                  <span>
+                    {settings?.deliveryMode === 'auto' && dynamicDeliveryFee === null 
+                      ? <span className="text-amber-500">Calculate below</span> 
+                      : deliveryFee === 0 ? 'Free' : formatNaira(deliveryFee)}
+                  </span>
                 </div>
               )}
 
@@ -320,7 +386,7 @@ export default function CartPage() {
               <button onClick={() => setStep('cart')} className="px-5 py-3 bg-stone-800 text-stone-300 rounded-xl hover:bg-stone-700 transition-colors">
                 ← Back
               </button>
-              <button onClick={handleSubmit} disabled={submitting || !settings} className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 font-bold rounded-xl transition-colors">
+              <button onClick={handleSubmit} disabled={submitting || !settings || (orderType === 'delivery' && settings?.deliveryMode === 'auto' && dynamicDeliveryFee === null)} className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-60 text-stone-950 font-bold rounded-xl transition-colors">
                 {submitting ? 'Processing...' : `Pay ${formatNaira(grandTotal)}`}
               </button>
             </div>
