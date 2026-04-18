@@ -11,10 +11,8 @@ export default function AdminSettingsPage() {
     bankName: '', bankAccountName: '', bankAccountNumber: '',
     paystackPublicKey: '',
     deliveryMode: 'flat', deliveryFee: 1500, deliveryZones: [] as {name: string, fee: number}[],
-    kwikEmail: '', kwikPassword: '', freeDeliveryAbove: 10000, 
-    restaurantName: '', 
-    restaurantPhone: '', 
-    restaurantAddress: '',
+    kwikEmail: '', kwikPassword: '', freeDeliveryAbove: 10000,
+    restaurantName: '', restaurantPhone: '', restaurantAddress: '',
   })
 
   useEffect(() => {
@@ -92,27 +90,8 @@ export default function AdminSettingsPage() {
         )}
 
         <form className="space-y-8" onSubmit={handleSave}>
-
-          {/* Payment Info */}
-          <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
-            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2">💳 Payment Methods</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Paystack Public Key</label>
-                <input value={settings.paystackPublicKey || ''} onChange={e => handleChange('paystackPublicKey', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" placeholder="pk_test_..." />
-              </div>
-              <div className="md:col-span-2 mt-4"><h3 className="text-sm font-semibold text-stone-300">Direct Bank Transfer Details</h3></div>
-              <div>
-                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Bank Name</label>
-                <input value={settings.bankName || ''} onChange={e => handleChange('bankName', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Account Number</label>
-                <input value={settings.bankAccountNumber || ''} onChange={e => handleChange('bankAccountNumber', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" />
-              </div>
-            </div>
-          </div>
-
+          
+          {/* 🏪 Store Info Section */}
           <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
             <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2">🏪 Store Information</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -132,12 +111,29 @@ export default function AdminSettingsPage() {
             </div>
           </div>
 
-          {/* Payment Info (Leave your existing code here) */}
+          {/* 💳 Payment Info */}
           <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
+            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2">💳 Payment Methods</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Paystack Public Key</label>
+                <input value={settings.paystackPublicKey || ''} onChange={e => handleChange('paystackPublicKey', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" placeholder="pk_test_..." />
+              </div>
+              <div className="md:col-span-2 mt-4"><h3 className="text-sm font-semibold text-stone-300">Direct Bank Transfer Details</h3></div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Bank Name</label>
+                <input value={settings.bankName || ''} onChange={e => handleChange('bankName', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Account Number</label>
+                <input value={settings.bankAccountNumber || ''} onChange={e => handleChange('bankAccountNumber', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" />
+              </div>
+            </div>
+          </div>
 
-          {/* Advanced Delivery Logic */}
+          {/* 🚚 Advanced Delivery Logic */}
           <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
-            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2"> Delivery Setup</h2>
+            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2">🚚 Delivery Setup</h2>
 
             <div className="mb-6">
               <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Pricing Mode</label>
@@ -151,7 +147,6 @@ export default function AdminSettingsPage() {
               </div>
             </div>
 
-            {/* Flat Rate UI */}
             {settings.deliveryMode === 'flat' && (
               <div>
                 <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Flat Delivery Fee (₦)</label>
@@ -159,7 +154,6 @@ export default function AdminSettingsPage() {
               </div>
             )}
 
-            {/* Kwik UI (Replaced Auto/Aggregator) */}
             {settings.deliveryMode === 'auto' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -174,7 +168,6 @@ export default function AdminSettingsPage() {
               </div>
             )}
 
-            {/* Zoned UI */}
             {settings.deliveryMode === 'zoned' && (
               <div className="space-y-3">
                 <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider">Delivery Zones & Fees</label>
