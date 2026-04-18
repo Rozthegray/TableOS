@@ -11,7 +11,10 @@ export default function AdminSettingsPage() {
     bankName: '', bankAccountName: '', bankAccountNumber: '',
     paystackPublicKey: '',
     deliveryMode: 'flat', deliveryFee: 1500, deliveryZones: [] as {name: string, fee: number}[],
-    kwikEmail: '', kwikPassword: '', freeDeliveryAbove: 10000, // 👈 Updated state
+    kwikEmail: '', kwikPassword: '', freeDeliveryAbove: 10000, 
+    restaurantName: '', 
+    restaurantPhone: '', 
+    restaurantAddress: '',
   })
 
   useEffect(() => {
@@ -110,9 +113,31 @@ export default function AdminSettingsPage() {
             </div>
           </div>
 
+          <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
+            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2">🏪 Store Information</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Restaurant Name</label>
+                <input value={settings.restaurantName || ''} onChange={e => handleChange('restaurantName', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" placeholder="TableOS Cafe" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Phone Number</label>
+                <input value={settings.restaurantPhone || ''} onChange={e => handleChange('restaurantPhone', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" placeholder="080..." />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-2">Pickup Address (Crucial for Kwik Delivery)</label>
+                <input value={settings.restaurantAddress || ''} onChange={e => handleChange('restaurantAddress', e.target.value)} className="w-full bg-stone-950 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 focus:border-amber-500" placeholder="e.g. 10 Admiralty Way, Lekki Phase 1, Lagos" />
+                <p className="text-xs text-stone-500 mt-2">This is the exact address Kwik dispatch riders will use to pick up the food.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Info (Leave your existing code here) */}
+          <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
+
           {/* Advanced Delivery Logic */}
           <div className="bg-stone-900 rounded-2xl p-6 border border-stone-800">
-            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2">🚚 Delivery Setup</h2>
+            <h2 className="text-xl font-bold mb-4 border-b border-stone-800 pb-2"> Delivery Setup</h2>
 
             <div className="mb-6">
               <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Pricing Mode</label>
