@@ -1,6 +1,6 @@
 // ── ORDER ──────────────────────────────────────────────────────────────────
 export type OrderType = 'delivery' | 'pickup' | 'dine-in'
-export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready' | 'delivered' | 'cancelled'
+export type OrderStatus = 'pending' | 'confirmed' | 'preparing' | 'ready' | 'out_for_delivery'| 'arrived'|'delivered' | 'cancelled'
 export type PaymentStatus = 'pending' | 'paid' | 'failed'
 export type PaymentMethod = 'cash' | 'bank_transfer' | 'paystack'
 
