@@ -31,6 +31,7 @@ export interface IOrder {
   paymentMethod: PaymentMethod
   paystackRef?: string
   notes?: string
+  estimatedTime?: string // 👈 Add this line right here!
   createdAt: string
   updatedAt: string
 }
