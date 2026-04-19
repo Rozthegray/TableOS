@@ -14,14 +14,15 @@ export interface ISettingsDocument extends Document {
   deliveryMode: 'flat' | 'zoned' | 'auto'
   deliveryFee: number 
   deliveryZones: { name: string; fee: number }[] 
-  kwikEmail: string // 👈 NEW: Kwik Auth
-  kwikPassword: string // 👈 NEW: Kwik Auth
+  fezApiKey: string 
   freeDeliveryAbove: number
 
   // Restaurant info
   restaurantName: string
   restaurantPhone: string
   restaurantAddress: string
+  restaurantLat: string // 👈 Added GPS Latitude
+  restaurantLng: string // 👈 Added GPS Longitude
   openingTime: string
   closingTime: string
   // Feature flags
@@ -54,14 +55,15 @@ const SettingsSchema = new Schema<ISettingsDocument>(
         { name: 'Ikorodu', fee: 2500 }
       ]
     },
-    kwikEmail: { type: String, default: '' }, // 👈 NEW
-    kwikPassword: { type: String, default: '' }, // 👈 NEW
+    fezApiKey: { type: String, default: '' }, 
     freeDeliveryAbove: { type: Number, default: 10000 },
 
     // Restaurant info
     restaurantName: { type: String, default: 'TableOS Restaurant' },
     restaurantPhone: { type: String, default: '' },
-    restaurantAddress: { type: String, default: 'Lagos, Nigeria' }, // Highly recommend setting a real default address here later!
+    restaurantAddress: { type: String, default: 'Lagos, Nigeria' }, 
+    restaurantLat: { type: String, default: '' }, // 👈 Added GPS Latitude
+    restaurantLng: { type: String, default: '' }, // 👈 Added GPS Longitude
     openingTime: { type: String, default: '10:00' },
     closingTime: { type: String, default: '22:00' },
     // Flags

@@ -2,8 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import dbConnect from '@/lib/db'
 import { Delivery } from '@/models'
 import Order from '@/models/Order'
-import { getSettings } from '@/models/Settings' // 👈 Import settings
-import { sendSMS, smsTemplates } from '@/lib/notifications'
+import { getSettings } from '@/models/Settings' 
+import { sendSMS } from '@/lib/notifications'
+
+// 🧹 Sanitizer to prevent Fez's routing engine from choking on long LocationIQ strings
+function simplifyAddress(fullAddress: string) {
+  if (!fullAddress) return "Lagos, Nigeria";
+  const parts = fullAddress.split(',').map(p => p.trim());
+  if (parts.length >= 3) {
+    return `${parts[0]}, ${parts[1]}, Lagos, Nigeria`;
+  }
+  return fullAddress;
+}
 
 export async function GET(req: NextRequest) {
   await dbConnect()
@@ -24,82 +34,80 @@ export async function POST(req: NextRequest) {
   const { orderId, rider, address, estimatedTime } = body
 
   // Verify order exists and is a delivery order
-const order = await Order.findById(orderId) as any
+  const order = await Order.findById(orderId) as any
   if (!order || order.orderType !== 'delivery') {
     return NextResponse.json({ success: false, error: 'Invalid delivery order' }, { status: 400 })
   }
 
   try {
     const settings = await getSettings()
-    let kwikTrackingUrl = ''
-    let kwikTaskId = ''
+    let fezTrackingUrl = ''
+    let fezTaskId = ''
 
-    // 🏍️ KWIK AUTO-DISPATCH LOGIC
-    if (settings.deliveryMode === 'auto' && settings.kwikEmail && settings.kwikPassword) {
-      // 1. Login to Kwik
-      const authRes = await fetch('https://api.kwik.delivery/api/v1/vendor/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: settings.kwikEmail, password: settings.kwikPassword })
-      })
-      const authData = await authRes.json()
+    // 🏍️ FEZ AUTO-DISPATCH LOGIC
+    if (settings.deliveryMode === 'auto' && settings.fezApiKey) {
       
-      if (authData.status === 200 && authData.data?.access_token) {
-        const token = authData.data.access_token
+      const itemDescriptions = order.items.map((i: any) => `${i.quantity}x ${i.name}`).join(', ')
+      const deliveryAddress = address || order.customer.address
 
-        // 2. Dispatch the Rider
-        const deliveryAddress = address || order.customer.address
-        const taskRes = await fetch('https://api.kwik.delivery/api/v1/task/create', {
+      // Use the strict GPS coordinates as FLOATS and sanitize the addresses
+      const fezPayload = {
+        pickup_address: simplifyAddress(settings.restaurantAddress),
+        pickup_lat: parseFloat(settings.restaurantLat || "6.4446"), 
+        pickup_lng: parseFloat(settings.restaurantLng || "3.4602"),
+        delivery_address: simplifyAddress(deliveryAddress),
+        delivery_lat: parseFloat(order.customer?.lat || "6.5244"), 
+        delivery_lng: parseFloat(order.customer?.lng || "3.3792"),
+        receiver_name: order.customer.name,
+        receiver_phone: order.customer.phone,
+        item_description: `Order ${order.orderNumber}: ${itemDescriptions}`
+      }
+
+      try {
+        const taskRes = await fetch('https://api.fezdelivery.co/v1/order', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`,
+            'Authorization': `Bearer ${settings.fezApiKey}`,
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({
-            deliveries: [{
-              pickup_address: settings.restaurantAddress,
-              delivery_address: deliveryAddress,
-              recipient_name: order.customer.name,
-              recipient_phone: order.customer.phone,
-              amount: order.totalAmount, // Helps Kwik know package value
-            }],
-            vehicle_id: 1, // Motorbike
-            payment_method: 1 // Online/Pre-paid (since Paystack handled it)
-          })
+          body: JSON.stringify(fezPayload)
         })
 
         const taskData = await taskRes.json()
         
-        if (taskData.status === 200) {
-          // Kwik successfully dispatched a rider!
-          kwikTaskId = taskData.data.task_id
-          kwikTrackingUrl = taskData.data.tracking_url
+        if (taskRes.ok && taskData.status !== 'Error' && taskData.status !== 'error') {
+          // Fez successfully dispatched a rider!
+          fezTaskId = taskData.data?.id || taskData.id || ''
+          fezTrackingUrl = taskData.data?.tracking_link || '' 
+          console.log("✅ Fez Rider Dispatched Successfully!", fezTaskId)
+        } else {
+          console.warn("⚠️ Fez Dispatch Warning:", taskData)
         }
+      } catch (fezError) {
+        console.error("Fez API Connection Error:", fezError)
       }
     }
 
     // 📦 Create local delivery record
     const delivery = await Delivery.create({
       orderId,
-      rider: settings.deliveryMode === 'auto' ? 'Kwik Dispatch' : rider,
+      rider: settings.deliveryMode === 'auto' ? 'Fez Dispatch' : rider,
       address: address || order.customer.address,
       estimatedTime,
       status: 'assigned',
-      // You can save Kwik info here if your Schema supports it
-      trackingUrl: kwikTrackingUrl, 
-      externalId: kwikTaskId
+      trackingUrl: fezTrackingUrl, 
+      externalId: fezTaskId
     })
 
     // Update order status
     await Order.findByIdAndUpdate(orderId, { status: 'preparing' })
 
-    // 📱 Optional: Send SMS to customer that rider is dispatched
-  // 📱 Send SMS to customer that rider is dispatched
+    // 📱 Send SMS to customer that rider is dispatched
     if (order.customer.phone) {
       await sendSMS(
         order.customer.phone,
-        kwikTrackingUrl
-          ? `Your TableOS order #${order.orderNumber} is on the way via Kwik! Track it here: ${kwikTrackingUrl}`
+        fezTrackingUrl
+          ? `Your TableOS order #${order.orderNumber} is on the way via Fez Delivery! Track it here: ${fezTrackingUrl}`
           : `Your TableOS order #${order.orderNumber} has been dispatched and is on its way! Our rider will contact you shortly.`
       )
     }
@@ -107,6 +115,6 @@ const order = await Order.findById(orderId) as any
     return NextResponse.json({ success: true, data: delivery }, { status: 201 })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
-    return NextResponse.json({ success: false, error: message }, { status: 400 })
+    return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
 }

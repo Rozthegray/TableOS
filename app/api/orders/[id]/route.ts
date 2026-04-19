@@ -14,7 +14,7 @@ export async function GET(_: NextRequest, { params }: { params: { id: string } }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   await dbConnect()
   const body = await req.json()
-  const { status, paymentStatus, paymentMethod } = body
+  const { status, paymentStatus, paymentMethod, estimatedTime } = body
 
   const update: Record<string, unknown> = {}
   if (status) update.status = status
@@ -24,18 +24,28 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const order = await Order.findByIdAndUpdate(params.id, update, { new: true })
   if (!order) return NextResponse.json({ success: false, error: 'Order not found' }, { status: 404 })
 
-  // Send SMS on key status changes
+  // 📱 Send SMS on key status changes
   if (status && order.customer.phone) {
     let msg: string | null = null
+    const formattedTotal = new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(order.totalAmount)
 
     if (status === 'confirmed') {
-      msg = smsTemplates.orderConfirmed(order.orderNumber, order.customer.name)
+      msg = `Your TableOS order #${order.orderNumber} is confirmed! Total: ${formattedTotal}.`
     } else if (status === 'preparing') {
-      msg = smsTemplates.orderPreparing(order.orderNumber)
+      msg = `We are preparing your order #${order.orderNumber}.`
     } else if (status === 'ready') {
-      msg = smsTemplates.orderReady(order.orderNumber, order.orderType)
-    } else if (status === 'delivered') {
-      msg = smsTemplates.orderDelivered(order.orderNumber)
+      msg = `Your order #${order.orderNumber} is ready!`
+    } 
+    // 🚚 NEW: The "Out for Delivery" SMS with ETA and Pricing
+    else if (status === 'out_for_delivery') {
+      msg = `Rider has your food! Estimated time to arrival is: ${estimatedTime || 'shortly'}. Total pricing: ${formattedTotal}.`
+    } 
+    // 🚨 NEW: The "Rider is Here" SMS
+    else if (status === 'arrived') {
+      msg = `Rider is here! Please step out to receive your order #${order.orderNumber}.`
+    } 
+    else if (status === 'delivered') {
+      msg = `Order #${order.orderNumber} delivered successfully. Enjoy your meal!`
     }
 
     if (msg) {

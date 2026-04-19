@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react' 
 import { useCartStore } from '../../store/cart'
 import { OrderType } from '../../lib/types'
 import { useRouter } from 'next/navigation'
@@ -25,16 +25,21 @@ export default function CartContent() {
   const [submitting, setSubmitting] = useState(false)
   const [orderNumber, setOrderNumber] = useState('')
 
-  // 🚚 Kwik Delivery States
+  // 🚚 Delivery & Map States
   const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number | null>(null)
   const [calculatingFee, setCalculatingFee] = useState(false)
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [isSearchingAddress, setIsSearchingAddress] = useState(false)
+  const [customerCoordinates, setCustomerCoordinates] = useState({ lat: '', lng: '' })
 
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null)
+
+  // 🛡️ Added houseDetails to state
   const [form, setForm] = useState({
-    name: '', phone: '', email: '', address: '', notes: '',
+    name: '', phone: '', email: '', address: '', houseDetails: '', notes: '',
     paymentMethod: 'cash' as 'cash' | 'bank_transfer' | 'paystack',
   })
 
-  // ⚙️ Fetch Live Settings on Mount
   useEffect(() => {
     fetch('/api/settings')
       .then((res) => res.json())
@@ -46,27 +51,74 @@ export default function CartContent() {
 
   const handleField = (field: string, value: string) => {
     setForm((f) => ({ ...f, [field]: value }))
-    // If they change their address, reset the delivery fee so they have to recalculate
-    if (field === 'address') setDynamicDeliveryFee(null) 
   }
 
-  // 🏍️ Fetch Kwik Delivery Quote
+  // 🌍 ENTERPRISE MAP: LocationIQ Integration
+  const handleAddressSearch = async (query: string) => {
+    handleField('address', query)
+    setDynamicDeliveryFee(null) 
+    setCustomerCoordinates({ lat: '', lng: '' })
+
+    if (query.length < 5) {
+      setSearchResults([])
+      setIsSearchingAddress(false)
+      return
+    }
+
+    setIsSearchingAddress(true)
+
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+
+    debounceTimer.current = setTimeout(async () => {
+      try {
+        const LOCATIONIQ_TOKEN = "pk.e6b3232142dec838e8c4bd962ca5610f" 
+        
+        const res = await fetch(`https://us1.locationiq.com/v1/search?key=${LOCATIONIQ_TOKEN}&format=json&countrycodes=ng&q=${encodeURIComponent(query)}`)
+        const data = await res.json()
+        
+        if (data.error) {
+          setSearchResults([])
+        } else {
+          setSearchResults(data.slice(0, 4)) 
+        }
+      } catch (err) {
+        console.error("Map search failed", err)
+      } finally {
+        setIsSearchingAddress(false)
+      }
+    }, 800) 
+  }
+
+  const selectAddress = (result: any) => {
+    handleField('address', result.display_name)
+    setCustomerCoordinates({ lat: result.lat, lng: result.lon }) 
+    setSearchResults([]) 
+  }
+
+  // Combine Map Address and House Specifics
+  const fullDeliveryAddress = form.houseDetails ? `${form.houseDetails}, ${form.address}` : form.address
+
+  // 🏍️ Fetch Delivery Quote
   const calculateDeliveryFee = async () => {
-    if (!form.address) return alert('Please enter an address first')
+    if (!customerCoordinates.lat) return alert('Please select a valid region/road from the dropdown list.')
     setCalculatingFee(true)
     
     try {
-      const res = await fetch('/api/delivery/quote', {
+      const res = await fetch('/api/deliveries/quote', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerAddress: form.address })
+        body: JSON.stringify({ 
+          customerAddress: fullDeliveryAddress,
+          customerLat: customerCoordinates.lat,
+          customerLng: customerCoordinates.lng
+        })
       })
       const data = await res.json()
       
       if (data.success) {
         setDynamicDeliveryFee(data.deliveryFee)
       } else {
-        alert(data.error || 'Could not calculate delivery fee. Please try a more specific address (e.g., "12 Admiralty Way, Lekki").')
+        alert(data.error || 'Could not calculate delivery fee for this route.')
       }
     } catch {
       alert('Network error calculating delivery fee.')
@@ -75,7 +127,6 @@ export default function CartContent() {
     }
   }
 
-  // 💰 Dynamic Pricing Math
   const cartTotal = total()
   let deliveryFee = 0
   
@@ -86,7 +137,6 @@ export default function CartContent() {
       deliveryFee = settings.deliveryFee || 0
     }
 
-    // Apply free delivery logic if applicable
     if (settings.freeDeliveryAbove > 0 && cartTotal >= settings.freeDeliveryAbove) {
       deliveryFee = 0
     }
@@ -94,16 +144,14 @@ export default function CartContent() {
   
   const grandTotal = cartTotal + deliveryFee
 
-  // 💳 Paystack Configuration
   const paystackConfig = {
     reference: `ORD-${new Date().getTime()}`,
     email: form.email || 'customer@tableos.com',
-    amount: grandTotal * 100, // Paystack expects Kobo (kobo = naira * 100)
+    amount: grandTotal * 100, 
     publicKey: settings?.paystackPublicKey || '',
   }
   const initializePayment = usePaystackPayment(paystackConfig)
 
-  // 🚀 The Database Submission Logic
   const placeOrderInDB = async (paymentReference?: string) => {
     try {
       const payload = {
@@ -113,13 +161,15 @@ export default function CartContent() {
           quantity: i.quantity,
           price: i.product.price,
         })),
-        totalAmount: grandTotal, // Uses the final total with delivery fee
+        totalAmount: grandTotal, 
         orderType,
         customer: {
           name: form.name,
           phone: form.phone,
           email: form.email || undefined,
-          address: form.address || undefined,
+          address: fullDeliveryAddress || undefined,
+          lat: customerCoordinates.lat || undefined,
+          lng: customerCoordinates.lng || undefined,
         },
         paymentMethod: form.paymentMethod,
         paymentReference, 
@@ -147,25 +197,27 @@ export default function CartContent() {
     }
   }
 
-  // 🎯 Form Submit Handler
   const handleSubmit = async () => {
     if (!form.name || !form.phone) return alert('Please fill your name and phone number')
-    if (orderType === 'delivery' && !form.address) return alert('Please enter delivery address')
+    
+    // 🛡️ Ensure they fill out both the map address AND the exact house details
+    if (orderType === 'delivery') {
+      if (!form.address) return alert('Please search and select your Area/Road from the map.')
+      if (!form.houseDetails) return alert('Please enter your exact House/Apartment Number.')
+    }
+    
     if (!items.length) return alert('Your cart is empty')
     
-    // 🛡️ Block checkout if Kwik auto-delivery is on but they haven't calculated the fee
     if (orderType === 'delivery' && settings?.deliveryMode === 'auto' && dynamicDeliveryFee === null) {
       return alert('Please calculate the delivery fee for your address first.')
     }
     
-    // Safety check: ensure Paystack key exists before trying to open it
     if (form.paymentMethod === 'paystack' && !settings?.paystackPublicKey) {
       return alert('Online payments are currently unavailable. Please choose Cash or Bank Transfer.')
     }
 
     setSubmitting(true)
 
-    // Handle Paystack vs Normal Checkout
     if (form.paymentMethod === 'paystack') {
       initializePayment({
         onSuccess: (reference: any) => {
@@ -177,7 +229,6 @@ export default function CartContent() {
         }
       })
     } else {
-      // Cash or Bank Transfer goes straight to DB
       placeOrderInDB()
     }
   }
@@ -233,7 +284,6 @@ export default function CartContent() {
 
         {step === 'cart' && (
           <>
-            {/* Cart items */}
             <div className="space-y-3 mb-8">
               {items.map((item) => (
                 <div key={item.product._id} className="flex items-center gap-4 bg-stone-900 rounded-xl p-4 border border-stone-800">
@@ -254,7 +304,6 @@ export default function CartContent() {
               ))}
             </div>
 
-            {/* Total & CTA */}
             <div className="bg-stone-900 rounded-xl p-5 border border-stone-800 mb-6">
               <div className="flex justify-between text-stone-400 text-sm mb-2">
                 <span>Subtotal</span><span>{formatNaira(cartTotal)}</span>
@@ -272,7 +321,6 @@ export default function CartContent() {
 
         {step === 'checkout' && (
           <>
-            {/* Order type */}
             <div className="mb-6">
               <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">How would you like it?</label>
               <div className="grid grid-cols-3 gap-3">
@@ -294,7 +342,6 @@ export default function CartContent() {
               </div>
             </div>
 
-            {/* Customer info */}
             <div className="space-y-3 mb-6">
               <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider">Your Details</label>
               <input type="text" placeholder="Full Name *" value={form.name} onChange={(e) => handleField('name', e.target.value)}
@@ -304,29 +351,63 @@ export default function CartContent() {
               <input type="email" placeholder="Email (optional)" value={form.email} onChange={(e) => handleField('email', e.target.value)}
                 className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" />
               
-              {/* 🚚 Dynamic Address Box for Delivery */}
               {orderType === 'delivery' && (
-                <div className="space-y-2">
-                  <input type="text" placeholder="Delivery Address *" value={form.address} onChange={(e) => handleField('address', e.target.value)}
-                    className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" />
+                <div className="space-y-3 relative p-4 bg-stone-950 border border-stone-800 rounded-2xl mt-4">
+                  <label className="block text-xs font-semibold text-stone-500 uppercase tracking-wider">Delivery Location</label>
+                  
+                  {/* Step 1: Map Search */}
+                  <div className="relative">
+                    <input 
+                      type="text" 
+                      placeholder="1. Search Region/Road (e.g. Gbagada Deeper Life) *" 
+                      value={form.address} 
+                      onChange={(e) => handleAddressSearch(e.target.value)}
+                      className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" 
+                    />
+                    {isSearchingAddress && <span className="absolute right-4 top-3.5 text-xs text-amber-500">Searching...</span>}
+                  </div>
+
+                  {searchResults.length > 0 && (
+                    <div className="absolute z-10 w-full bg-stone-800 border border-stone-700 rounded-xl mt-1 overflow-hidden shadow-xl">
+                      {searchResults.map((result, idx) => (
+                        <button 
+                          key={idx} 
+                          type="button"
+                          onClick={() => selectAddress(result)}
+                          className="w-full text-left px-4 py-3 text-sm text-stone-300 hover:bg-stone-700 border-b border-stone-700 last:border-0"
+                        >
+                          {result.display_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Step 2: Exact House Text Input */}
+                  <input 
+                    type="text" 
+                    placeholder="2. House/Apt Number & Street (e.g. 13 Famous St) *" 
+                    value={form.houseDetails} 
+                    onChange={(e) => handleField('houseDetails', e.target.value)}
+                    className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500" 
+                  />
                   
                   {settings?.deliveryMode === 'auto' && (
                     <button 
+                      type="button"
                       onClick={calculateDeliveryFee} 
-                      disabled={calculatingFee || !form.address}
-                      className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-amber-400 text-sm font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                      disabled={calculatingFee || !customerCoordinates.lat} 
+                      className="w-full py-2.5 bg-stone-800 hover:bg-stone-700 disabled:opacity-50 text-amber-400 text-sm font-semibold rounded-xl transition-colors mt-2"
                     >
-                      {calculatingFee ? 'Calculating via Kwik...' : dynamicDeliveryFee !== null ? 'Recalculate Delivery Fee' : 'Calculate Delivery Fee'}
+                      {calculatingFee ? 'Calculating...' : dynamicDeliveryFee !== null ? 'Recalculate Delivery Fee' : 'Calculate Delivery Fee'}
                     </button>
                   )}
                 </div>
               )}
               
               <textarea placeholder="Special instructions (optional)" value={form.notes} onChange={(e) => handleField('notes', e.target.value)} rows={2}
-                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500 resize-none" />
+                className="w-full bg-stone-900 border border-stone-700 rounded-xl px-4 py-3 text-stone-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-500 resize-none mt-3" />
             </div>
 
-            {/* Payment method */}
             <div className="mb-6">
               <label className="block text-xs font-semibold text-stone-400 uppercase tracking-wider mb-3">Payment Method</label>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -335,7 +416,7 @@ export default function CartContent() {
                   { value: 'bank_transfer', label: '🏦 Bank Transfer' },
                   { value: 'paystack', label: '💳 Card (Paystack)' },
                 ].map((m) => (
-                  <button key={m.value} onClick={() => handleField('paymentMethod', m.value)}
+                  <button key={m.value} onClick={() => handleField('paymentMethod', m.value as any)}
                     className={`p-3 rounded-xl border text-xs font-bold transition-all ${
                       form.paymentMethod === m.value
                         ? 'border-amber-500 bg-amber-500/10 text-amber-400'
@@ -346,7 +427,6 @@ export default function CartContent() {
                 ))}
               </div>
               
-              {/* 🏦 Dynamic Bank Details Box */}
               {form.paymentMethod === 'bank_transfer' && settings && (
                 <div className="mt-3 bg-blue-900/10 border border-blue-900/50 p-4 rounded-xl text-blue-200 text-sm">
                   <p className="mb-2 text-blue-300">Please transfer <strong>{formatNaira(grandTotal)}</strong> to:</p>
@@ -357,7 +437,6 @@ export default function CartContent() {
               )}
             </div>
 
-            {/* Order summary */}
             <div className="bg-stone-900 rounded-xl p-4 border border-stone-800 mb-6 text-sm space-y-1">
               {items.map((i) => (
                 <div key={i.product._id} className="flex justify-between text-stone-400">
